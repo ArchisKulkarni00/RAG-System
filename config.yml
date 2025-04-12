@@ -1,0 +1,10 @@
+# config.yml
+data_dir: "./Dataset"
+collection_name: "database"
+chunk_size: 400
+chunk_overlap: 40
+embedding_model: "nomic-embed-text"
+batch_size: 32
+milvus_path: "./milvus_data_U.db"
+ollama_host: "127.0.0.1"
+ollama_port: "11434"

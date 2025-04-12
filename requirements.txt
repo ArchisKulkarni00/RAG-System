@@ -1,0 +1,8 @@
+ollama
+pymilvus
+typing
+tqdm
+yaml
+os
+hashlib
+numpy
