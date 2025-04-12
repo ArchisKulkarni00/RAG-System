@@ -8,3 +8,4 @@ batch_size: 32
 milvus_path: "./milvus_data_U.db"
 ollama_host: "127.0.0.1"
 ollama_port: "11434"
+chat_model: "llama3.2:latest"
