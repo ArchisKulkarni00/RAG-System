@@ -24,7 +24,7 @@ for document in documents:
     text = document["text"]
     filename = document["source"]
 
-    chunks = semantic_chunker(text,  config["chunk_size"], config["chunk_overlap"])
+    chunks = semantic_chunker(text,  config["chunk_size"], config["chunk_overlap"], "synonyms.csv")
     embeds = generate_embeddings(chunks, ollama_client, config["embedding_model"], config["batch_size"])
     data = [{
         "id": np.int64(int(hashlib.md5(f"{document['source']}_{i}".encode()).hexdigest()[:15], 16)),  # Convert to 64-bit int,

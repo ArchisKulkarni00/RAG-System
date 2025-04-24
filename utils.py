@@ -3,6 +3,17 @@ from typing import List, Dict, Any
 from tqdm import tqdm
 import yaml
 from ollama import Client
+import csv
+from collections import defaultdict
+import spacy
+from pymilvus import MilvusClient
+
+# Load Spacy's English model
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    print("Error: spaCy English model 'en_core_web_sm' not found. Please install it first.")
+    exit(1)
 
 
 def load_config() -> Dict[str, Any]:
@@ -74,7 +85,7 @@ def read_text_files(folder_path: str) -> List[Dict[str, str]]:
     
     return documents
 
-def semantic_chunker(text: str, chunk_size: int = 400, overlap: int = 40) -> List[str]:
+def semantic_chunker(text: str, chunk_size: int = 400, overlap: int = 40, synonyms_file=None) -> List[str]:
     """Enhanced chunking with paragraph awareness.
     
     Args:
@@ -104,7 +115,9 @@ def semantic_chunker(text: str, chunk_size: int = 400, overlap: int = 40) -> Lis
         else:
             # Case 2: Paragraph needs to be split
             if current_chunk:
-                chunks.append(' '.join(current_chunk))
+                current_chunk_text = ' '.join(current_chunk)
+                current_chunk_text = enhance_text_with_metadata(current_chunk_text)
+                chunks.append(current_chunk_text)
                 current_chunk = current_chunk[-overlap:]  # Apply overlap
                 current_length = len(current_chunk)
             
@@ -116,13 +129,18 @@ def semantic_chunker(text: str, chunk_size: int = 400, overlap: int = 40) -> Lis
                 para_words = para_words[remaining:]
                 
                 if current_length >= chunk_size:
-                    chunks.append(' '.join(current_chunk))
+                    current_chunk_text = ' '.join(current_chunk)
+                    current_chunk_text = enhance_text_with_metadata(current_chunk_text)
+                    chunks.append(current_chunk_text)
                     current_chunk = current_chunk[-overlap:]
                     current_length = len(current_chunk)
+        
     
     # Add remaining words
-    if current_chunk:
-        chunks.append(' '.join(current_chunk))
+    if current_chunk: 
+        current_chunk_text = ' '.join(current_chunk)
+        current_chunk_text = enhance_text_with_metadata(current_chunk_text)
+        chunks.append(current_chunk_text)
     
     return chunks
 
@@ -228,3 +246,149 @@ def inspect_chunks_for_file(file_path: str, chunk_size: int = 400, overlap: int 
         print("─" * 40)
         print(chunk)
         print("─" * 40)
+
+def retrieve_context(
+    query: str,
+    ollama_client,
+    milvus_path,
+    embedding_model,
+    collection_name,
+    top_k,
+    score_threshold
+):
+    """
+    Retrieve relevant context from Milvus based on user query.
+    
+    Args:
+        query: User's question/search query
+        config: Configuration dictionary containing:
+            - milvus_path: Path to Milvus data
+            - collection_name: Name of your collection
+            - embedding_model: Name of embedding model
+        top_k: Number of chunks to retrieve
+        score_threshold: Minimum similarity score (0-1)
+        
+    Returns:
+        Combined relevant context as string or None if no results
+    """
+    try:
+        # 1. Initialize Milvus client
+        client = MilvusClient(milvus_path)
+        
+        # 2. Generate query embedding
+        embedding = ollama_client.embeddings(
+            model=embedding_model,
+            prompt=query
+        )["embedding"]
+        
+        # 3. Search Milvus
+        results = client.search(
+            collection_name=collection_name,
+            data=[embedding],
+            limit=top_k,
+            output_fields=["text", "source"],  # Return these fields
+            search_params={"metric_type": "COSINE", "params": {"nprobe": 10}}
+        )
+        
+        # 4. Filter and format results
+        relevant_chunks = []
+        for hit in results[0]:
+            if hit["distance"] >= score_threshold:  # Higher score = more relevant
+                source = hit["entity"]["source"]
+                text = hit["entity"]["text"]
+                
+                # Remove the [Keywords: ...] header if it exists
+                if text.startswith("[Keywords:") and "\n\n" in text:
+                    # Find the end of the keywords header (after the double newline)
+                    header_end = text.find("\n\n") + 2
+                    text = text[header_end:]  # Keep everything after the header
+                    
+                relevant_chunks.append(f"SOURCE: {source}\n{text}")
+        
+        return "\n\n---\n\n".join(relevant_chunks) if relevant_chunks else None
+        
+    except Exception as e:
+        print(f"Error retrieving context: {e}")
+        return None
+
+def load_synonyms_from_csv(csv_path="synonyms.csv"):
+    """
+    Load synonyms from CSV file with columns: Original,Synonyms
+    Returns dictionary of {original: [synonyms]} or None if file doesn't exist
+    """
+    if not os.path.exists(csv_path):
+        return None
+        
+    synonyms = defaultdict(list)
+    with open(csv_path, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            original = row['Original'].strip().lower()
+            if row['Synonyms']:
+                for syn in row['Synonyms'].split(','):
+                    synonyms[original].append(syn.strip().lower())
+    return dict(synonyms) if synonyms else None
+
+def extract_important_terms(text):
+    """Extract nouns, proper nouns, and noun phrases from text."""
+    doc = nlp(text.lower())
+    terms = set()
+    
+    # Extract nouns and proper nouns
+    for token in doc:
+        if token.pos_ in ["NOUN", "PROPN"] and len(token.text) > 2:
+            terms.add(token.lemma_)
+    
+    # Extract noun chunks (e.g., "entrance exam")
+    for chunk in doc.noun_chunks:
+        if len(chunk.text) > 3:
+            normalized = " ".join([t.lemma_ for t in chunk])
+            terms.add(normalized)
+    
+    return terms
+
+def augment_with_synonyms(terms, synonym_dict=None):
+    """
+    Expand terms with synonyms from provided dictionary.
+    If no dictionary provided, returns original terms.
+    """
+    if not synonym_dict:
+        return terms
+        
+    augmented = set()
+    for term in terms:
+        augmented.add(term)
+        # Check for exact matches
+        if term in synonym_dict:
+            augmented.update(synonym_dict[term])
+        # Check for partial matches in multi-word terms
+        for key, syns in synonym_dict.items():
+            if key in term and key != term:
+                augmented.update(syns)
+    return augmented
+
+def enhance_text_with_metadata(text, synonym_file=None):
+    """
+    Enhance text by prepending extracted (and optionally synonym-augmented) metadata.
+    If synonym_file doesn't exist, skips synonym augmentation.
+    """
+    # Load synonyms if file exists
+    synonym_dict = None
+    if synonym_file:
+        synonym_dict = load_synonyms_from_csv(synonym_file)
+        if synonym_dict is None:
+            print(f"Note: Synonym file '{synonym_file}' not found - skipping synonym augmentation")
+    
+    # Step 1: Extract important terms
+    terms = extract_important_terms(text)
+    
+    # Step 2: Optionally augment with synonyms
+    augmented_terms = augment_with_synonyms(terms, synonym_dict)
+    
+    # Step 3: Format metadata header
+    metadata_header = "[Keywords: " + ", ".join(sorted(augmented_terms)) + "]\n\n"
+    
+    # Step 4: Combine with original text
+    enhanced_text = metadata_header + text
+    
+    return enhanced_text

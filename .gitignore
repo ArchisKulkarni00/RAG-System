@@ -3,6 +3,7 @@
 /local_config.yml
 *.db
 *.db.lock
+synonyms.csv
 
 
 # Byte-compiled / optimized / DLL files
