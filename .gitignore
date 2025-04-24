@@ -2,6 +2,7 @@
 /Dataset/*.txt
 /local_config.yml
 *.db
+*.db.lock
 
 
 # Byte-compiled / optimized / DLL files

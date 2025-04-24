@@ -113,7 +113,7 @@ def retrieve_context(
         return None
 
 
-def test_rag_pipeline():
+def test_rag_pipeline(print_context=False):
     """Basic chat interface for testing RAG"""
     print("🔍 RAG Testing Interface")
     print(f"Model: {config['chat_model']}")
@@ -129,6 +129,9 @@ def test_rag_pipeline():
         context = retrieve_context(query)  # Replace with your retrieval logic
         if not context:
             context = 'No specific context provided'
+
+        if print_context:
+            print("\n ⚙️ Context:  ", context)
         
         # 3. Get LLM response
         response = query_ollama(query, context)
@@ -140,7 +143,7 @@ def test_rag_pipeline():
 # Example usage:
 if __name__ == "__main__":
     # test entire application
-    test_rag_pipeline()
+    test_rag_pipeline(False)
 
     # print the context being reterived for some query
     # print(retrieve_context("What is the procedure for summer internship selection."))

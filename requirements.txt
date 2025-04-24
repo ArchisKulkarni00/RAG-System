@@ -6,3 +6,5 @@ yaml
 os
 hashlib
 numpy
+Fastapi
+uvicorn
