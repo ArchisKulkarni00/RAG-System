@@ -4,12 +4,14 @@ from pydantic import BaseModel
 from ollama import Client
 from pymilvus import MilvusClient
 from utils import load_config, retrieve_context
+import requests
 
 app = FastAPI()
 config = load_config()
 
 # Initialize clients
-ollama_client = Client(host=f"http://{config['ollama_host']}:{config['ollama_port']}")
+ollama_url = 'http://{host}:{port}'.format(host=config["ollama_host"], port=config["ollama_port"])
+ollama_client = Client(host=ollama_url)
 milvus_client = MilvusClient(config["milvus_path"])
 
 class QueryRequest(BaseModel):
@@ -27,16 +29,30 @@ async def ask_question(request: QueryRequest) -> str:
                                    config["top_k"],
                                    config["score_threshold"]) or "No context found"
         
-        response = ollama_client.chat(
-            model=config["chat_model"],
-            messages=[{
-                'role': 'user',
-                'content': f"Context: {context}\nQuestion: {request.question}"
-            }],
-            options={'temperature': 0.3}
+        sys_prompt = config["system_prompt"]
+        query = request.question
+
+        prompt = f"""
+        Context: {context}
+        Question: {query}
+        """
+            
+        jsonPayload = {
+                    'model': config["chat_model"],
+                    'prompt': prompt,
+                    'system': sys_prompt,
+                    'stream': False,
+                    'options': {
+                        'temperature': 0.3
+                    }
+                }
+
+        response = requests.post(
+            url=ollama_url + '/api/generate',
+            json= jsonPayload,
         )
-        
-        return response['message']['content']
+        # print(response.json())
+        return response.json()['response']
         
     except Exception as e:
         raise HTTPException(500, f"Error processing request: {str(e)}")

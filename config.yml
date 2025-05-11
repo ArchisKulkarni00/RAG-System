@@ -11,3 +11,4 @@ ollama_port: "11434"
 chat_model: "llama3.2:latest"
 top_k: 3
 score_threshold: 0.5
+system_prompt: "You are a assistant. Please reply based on the provided context. Be polite."

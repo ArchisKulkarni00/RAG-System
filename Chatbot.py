@@ -2,6 +2,8 @@ from typing import Dict, Any
 from utils import load_config
 from ollama import Client
 from utils import retrieve_context
+import requests
+import json
 
 # READ THE CONFIG FILE
 config = load_config()
@@ -11,6 +13,7 @@ ollama_url = 'http://{host}:{port}'.format(host=config["ollama_host"], port=conf
 ollama_client = Client(
   host=ollama_url,
 )
+
 print("⚙️ Set Ollama url to:", ollama_url)
 
 
@@ -37,26 +40,30 @@ def query_ollama(
     Returns:
         Generated response
     """
-    prompt = f"""Answer the question based only on the following context:
-    
-    {context}
+    sys_prompt = config["system_prompt"]
 
+    prompt = f"""
+    Context: {context}
     Question: {query}
-    
-    Answer clearly and concisely."""
-    
-    try:
-        response = ollama_client.chat(
-            model=config["chat_model"],
-            messages=[{
-                'role': 'user',
-                'content': prompt
-            }],
-            options={
-                'temperature': 0.3  # More deterministic
+    """
+        
+    jsonPayload = {
+                'model': config["chat_model"],
+                'prompt': prompt,
+                'system': sys_prompt,
+                'stream': False,
+                'options': {
+                    'temperature': 0.3
+                }
             }
+
+    try:
+        response = requests.post(
+            url=ollama_url + '/api/generate',
+            json= jsonPayload,
         )
-        return response['message']['content']
+        # print(response.json())
+        return response.json()['response']
     except Exception as e:
         print(f"🚨 Error querying Ollama: {e}")
         return "Sorry, I encountered an error"
