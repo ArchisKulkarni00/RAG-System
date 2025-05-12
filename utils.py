@@ -15,6 +15,9 @@ except OSError:
     print("Error: spaCy English model 'en_core_web_sm' not found. Please install it first.")
     exit(1)
 
+PREFIX_SEARCH_DOC = "search_document:"
+PREFIX_SEARCH_QUERY = "search_query:"
+
 
 def load_config() -> Dict[str, Any]:
     """Load configuration with fallback hierarchy:
@@ -140,6 +143,7 @@ def semantic_chunker(text: str, chunk_size: int = 400, overlap: int = 40, synony
     if current_chunk: 
         current_chunk_text = ' '.join(current_chunk)
         current_chunk_text = enhance_text_with_metadata(current_chunk_text)
+        current_chunk_text = PREFIX_SEARCH_DOC+current_chunk_text
         chunks.append(current_chunk_text)
     
     return chunks
@@ -274,6 +278,8 @@ def retrieve_context(
     try:
         # 1. Initialize Milvus client
         client = MilvusClient(milvus_path)
+
+        query = PREFIX_SEARCH_QUERY + query
         
         # 2. Generate query embedding
         embedding = ollama_client.embeddings(

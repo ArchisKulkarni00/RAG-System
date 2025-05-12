@@ -43,7 +43,7 @@ async def ask_question(request: QueryRequest) -> str:
                     'system': sys_prompt,
                     'stream': False,
                     'options': {
-                        'temperature': 0.3
+                        'temperature': 0.1
                     }
                 }
 

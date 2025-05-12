@@ -53,7 +53,7 @@ def query_ollama(
                 'system': sys_prompt,
                 'stream': False,
                 'options': {
-                    'temperature': 0.3
+                    'temperature': 0.1
                 }
             }
 
